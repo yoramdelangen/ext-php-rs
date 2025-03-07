@@ -1,8 +1,10 @@
 #![cfg_attr(windows, feature(abi_vectorcall))]
 use ext_php_rs::{
     binary::Binary,
+    boxed::ZBox,
     prelude::*,
-    types::{ZendObject, Zval},
+    types::{ArrayKey, ZendHashTable, ZendObject, Zval},
+    zend::ProcessGlobals,
 };
 use std::collections::HashMap;
 
@@ -61,6 +63,40 @@ pub fn test_object(a: &mut ZendObject) -> &mut ZendObject {
     a
 }
 
+// GLOBALS
+#[php_function]
+pub fn test_globals_http_get() -> ZBox<ZendHashTable> {
+    ProcessGlobals::get().http_get_vars().to_owned()
+}
+
+#[php_function]
+pub fn test_globals_http_post() -> ZBox<ZendHashTable> {
+    ProcessGlobals::get().http_post_vars().to_owned()
+}
+
+#[php_function]
+pub fn test_globals_http_cookie() -> ZBox<ZendHashTable> {
+    ProcessGlobals::get().http_cookie_vars().to_owned()
+}
+
+#[php_function]
+pub fn test_globals_http_server() -> ZBox<ZendHashTable> {
+    ProcessGlobals::get().http_server_vars().unwrap().to_owned()
+}
+
+#[php_function]
+pub fn test_globals_http_request() -> ZBox<ZendHashTable> {
+    ProcessGlobals::get()
+        .http_request_vars()
+        .unwrap()
+        .to_owned()
+}
+
+#[php_function]
+pub fn test_globals_http_files() -> ZBox<ZendHashTable> {
+    ProcessGlobals::get().http_files_vars().to_owned()
+}
+
 #[php_function]
 pub fn test_closure() -> Closure {
     Closure::wrap(Box::new(|a| a) as Box<dyn Fn(String) -> String>)
@@ -101,6 +137,59 @@ pub fn test_variadic_add_required(numbers: &[&Zval]) -> Vec<Zval> {
 #[php_function(optional = "everything")]
 pub fn test_variadic_all_types(everything: &[&Zval]) -> Vec<Zval> {
     everything.iter().map(|x| x.shallow_clone()).collect()
+}
+
+#[php_function]
+pub fn iter_next(ht: &ZendHashTable) -> Vec<Zval> {
+    ht.iter()
+        .flat_map(|(k, v)| [key_to_zval(k), v.shallow_clone()])
+        .collect()
+}
+
+#[php_function]
+pub fn iter_back(ht: &ZendHashTable) -> Vec<Zval> {
+    ht.iter()
+        .rev()
+        .flat_map(|(k, v)| [key_to_zval(k), v.shallow_clone()])
+        .collect()
+}
+
+#[php_function]
+pub fn iter_next_back(ht: &ZendHashTable, modulus: usize) -> Vec<Option<Zval>> {
+    let mut result = Vec::with_capacity(ht.len());
+    let mut iter = ht.iter();
+
+    for i in 0..ht.len() + modulus {
+        let entry = if i % modulus == 0 {
+            iter.next_back()
+        } else {
+            iter.next()
+        };
+
+        if let Some((k, v)) = entry {
+            result.push(Some(key_to_zval(k)));
+            result.push(Some(v.shallow_clone()));
+        } else {
+            result.push(None);
+        }
+    }
+
+    result
+}
+
+fn key_to_zval(key: ArrayKey) -> Zval {
+    match key {
+        ArrayKey::String(s) => {
+            let mut zval = Zval::new();
+            let _ = zval.set_string(s.as_str(), false);
+            zval
+        }
+        ArrayKey::Long(l) => {
+            let mut zval = Zval::new();
+            zval.set_long(l);
+            zval
+        }
+    }
 }
 
 #[php_class]
@@ -210,6 +299,8 @@ mod integration {
     mod callable;
     mod class;
     mod closure;
+    mod globals;
+    mod iterator;
     mod nullable;
     mod number;
     mod object;

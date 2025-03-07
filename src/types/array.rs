@@ -91,7 +91,7 @@ impl ZendHashTable {
     /// Panics if memory for the hashtable could not be allocated.
     pub fn with_capacity(size: u32) -> ZBox<Self> {
         unsafe {
-            // SAFETY: PHP allocater handles the creation of the array.
+            // SAFETY: PHP allocator handles the creation of the array.
             let ptr = _zend_new_array(size);
 
             // SAFETY: `as_mut()` checks if the pointer is null, and panics if it is not.
@@ -573,7 +573,9 @@ impl ToOwned for ZendHashTable {
 pub struct Iter<'a> {
     ht: &'a ZendHashTable,
     current_num: i64,
+    end_num: i64,
     pos: HashPosition,
+    end_pos: HashPosition,
 }
 
 #[derive(Debug, PartialEq)]
@@ -627,10 +629,22 @@ impl<'a> Iter<'a> {
     ///
     /// * `ht` - The hashtable to iterate.
     pub fn new(ht: &'a ZendHashTable) -> Self {
+        let end_num: i64 = ht
+            .len()
+            .try_into()
+            .expect("Integer overflow in hashtable length");
+        let end_pos = if ht.nNumOfElements > 0 {
+            ht.nNumOfElements - 1
+        } else {
+            0
+        };
+
         Self {
             ht,
             current_num: 0,
+            end_num,
             pos: 0,
+            end_pos,
         }
     }
 }
@@ -678,14 +692,18 @@ impl<'a> Iterator for Iter<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for Iter<'a> {
+impl ExactSizeIterator for Iter<'_> {
     fn len(&self) -> usize {
         self.ht.len()
     }
 }
 
-impl<'a> DoubleEndedIterator for Iter<'a> {
+impl DoubleEndedIterator for Iter<'_> {
     fn next_back(&mut self) -> Option<Self::Item> {
+        if self.end_num <= self.current_num {
+            return None;
+        }
+
         let key_type = unsafe {
             zend_hash_get_current_key_type_ex(
                 self.ht as *const ZendHashTable as *mut ZendHashTable,
@@ -703,35 +721,39 @@ impl<'a> DoubleEndedIterator for Iter<'a> {
             zend_hash_get_current_key_zval_ex(
                 self.ht as *const ZendHashTable as *mut ZendHashTable,
                 &key as *const Zval as *mut Zval,
-                &mut self.pos as *mut HashPosition,
+                &mut self.end_pos as *mut HashPosition,
             );
         }
         let value = unsafe {
             &*zend_hash_get_current_data_ex(
                 self.ht as *const ZendHashTable as *mut ZendHashTable,
-                &mut self.pos as *mut HashPosition,
+                &mut self.end_pos as *mut HashPosition,
             )
         };
 
         let key = match ArrayKey::from_zval(&key) {
             Some(key) => key,
-            None => ArrayKey::Long(self.current_num),
+            None => ArrayKey::Long(self.end_num),
         };
 
         unsafe {
             zend_hash_move_backwards_ex(
                 self.ht as *const ZendHashTable as *mut ZendHashTable,
-                &mut self.pos as *mut HashPosition,
+                &mut self.end_pos as *mut HashPosition,
             )
         };
-        self.current_num -= 1;
+        self.end_num -= 1;
 
         Some((key, value))
     }
 }
 
-impl<'a, 'b> Iter<'a> {
-    pub fn next_zval(&'b mut self) -> Option<(Zval, &'a Zval)> {
+impl<'a> Iter<'a> {
+    pub fn next_zval(&mut self) -> Option<(Zval, &'a Zval)> {
+        if self.current_num >= self.end_num {
+            return None;
+        }
+
         let key_type = unsafe {
             zend_hash_get_current_key_type_ex(
                 self.ht as *const ZendHashTable as *mut ZendHashTable,
@@ -739,7 +761,11 @@ impl<'a, 'b> Iter<'a> {
             )
         };
 
-        if key_type == -1 {
+        // Key type `-1` is ???
+        // Key type `1` is string
+        // Key type `2` is long
+        // Key type `3` is null meaning the end of the array
+        if key_type == -1 || key_type == 3 {
             return None;
         }
 
@@ -753,10 +779,16 @@ impl<'a, 'b> Iter<'a> {
             );
         }
         let value = unsafe {
-            &*zend_hash_get_current_data_ex(
+            let val_ptr = zend_hash_get_current_data_ex(
                 self.ht as *const ZendHashTable as *mut ZendHashTable,
                 &mut self.pos as *mut HashPosition,
-            )
+            );
+
+            if val_ptr.is_null() {
+                return None;
+            }
+
+            &*val_ptr
         };
 
         if !key.is_long() && !key.is_string() {
@@ -805,13 +837,13 @@ impl<'a> Iterator for Values<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for Values<'a> {
+impl ExactSizeIterator for Values<'_> {
     fn len(&self) -> usize {
         self.0.len()
     }
 }
 
-impl<'a> DoubleEndedIterator for Values<'a> {
+impl DoubleEndedIterator for Values<'_> {
     fn next_back(&mut self) -> Option<Self::Item> {
         self.0.next_back().map(|(_, zval)| zval)
     }
@@ -847,7 +879,7 @@ impl<'a> FromZval<'a> for &'a ZendHashTable {
 }
 
 ///////////////////////////////////////////
-/// HashMap
+// HashMap
 ///////////////////////////////////////////
 
 impl<'a, V> TryFrom<&'a ZendHashTable> for HashMap<String, V>
@@ -916,7 +948,7 @@ where
 }
 
 ///////////////////////////////////////////
-/// Vec
+// Vec
 ///////////////////////////////////////////
 
 impl<'a, T> TryFrom<&'a ZendHashTable> for Vec<T>

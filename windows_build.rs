@@ -23,7 +23,7 @@ impl<'a> Provider<'a> {
     fn get_php_lib_name(&self) -> Result<String> {
         Ok(self
             .devel
-            .php_lib()
+            .php_lib(self.info.debug()?)
             .file_stem()
             .context("Failed to get PHP library name")?
             .to_string_lossy()
@@ -85,7 +85,7 @@ impl<'a> PHPProvider<'a> for Provider<'a> {
         let php_lib_name = self.get_php_lib_name()?;
         let php_lib_search = self
             .devel
-            .php_lib()
+            .php_lib(self.info.debug()?)
             .parent()
             .context("Failed to get PHP library parent folder")?
             .to_string_lossy()
@@ -163,12 +163,27 @@ impl DevelPack {
     /// Downloads a new PHP development pack, unzips it in the build script
     /// temporary directory.
     fn new(version: &str, is_zts: bool, arch: Arch) -> Result<DevelPack> {
+        // If the PHP version is more than 8.4.1, use VS17 instead of VS16.
+        let version_float = version
+            .split('.')
+            .take(2)
+            .collect::<Vec<_>>()
+            .join(".")
+            .parse::<f32>()
+            .context("Failed to parse PHP version as float")?;
+
+        // PHP builds switched to VS17 in PHP 8.4.1.
+        let visual_studio_version = if version_float >= 8.4f32 {
+            "vs17"
+        } else {
+            "vs16"
+        };
+
         let zip_name = format!(
             "php-devel-pack-{}{}-Win32-{}-{}.zip",
             version,
             if is_zts { "" } else { "-nts" },
-            "vs16", /* TODO(david): At the moment all PHPs supported by ext-php-rs use VS16 so
-                     * this is constant. */
+            visual_studio_version,
             arch
         );
 
@@ -218,13 +233,46 @@ impl DevelPack {
     }
 
     /// Returns the path of the PHP library containing symbols for linking.
-    pub fn php_lib(&self) -> PathBuf {
-        let php_nts = self.0.join("lib").join("php8.lib");
-        if php_nts.exists() {
-            php_nts
-        } else {
-            self.0.join("lib").join("php8ts.lib")
+    pub fn php_lib(&self, is_debug: bool) -> PathBuf {
+        let php_lib_path = std::env::var("PHP_LIB")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| self.0.join("lib"));
+
+        if !php_lib_path.exists() {
+            panic!(
+                "Error: Specified PHP library path '{}' does not exist.",
+                php_lib_path.display()
+            );
         }
+
+        let candidates = if is_debug {
+            ["php8_debug.lib", "php8ts_debug.lib"]
+        } else {
+            ["php8.lib", "php8ts.lib"]
+        };
+
+        candidates
+            .iter()
+            .map(|lib| php_lib_path.join(lib))
+            .find(|path| path.exists())
+            .expect(&format!(
+                "{}",
+                if is_debug {
+                    format!(
+                        r#"Error: No suitable PHP library found in '{}'.
+To build the application in DEBUG mode on Windows,
+you must have a PHP SDK built with the DEBUG option enabled
+and specify the PHP_LIB to the folder containing the lib files.
+For example: set PHP_LIB=C:\php-sdk\php-dev\vc16\x64\php-8.3.13-src\x64\Debug_TS."#,
+                        php_lib_path.display()
+                    )
+                } else {
+                    format!(
+                        "Error: No suitable PHP library found in '{}'.",
+                        php_lib_path.display()
+                    )
+                }
+            ))
     }
 
     /// Returns a list of include paths to pass to the compiler.

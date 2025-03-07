@@ -18,6 +18,8 @@ jobs:
         php: ["8.2"]
         clang: ["17"]
         mdbook: ["latest"]
+    permissions:
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -29,26 +31,25 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
       - name: Cache LLVM and Clang
         id: cache-llvm
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/llvm-${{ matrix.clang }}
           key: ${{ matrix.os }}-llvm-${{ matrix.clang }}
       - name: Setup LLVM & Clang
-        uses: KyleMayes/install-llvm-action@v1
+        uses: KyleMayes/install-llvm-action@v2
         with:
           version: ${{ matrix.clang }}
           directory: ${{ runner.temp }}/llvm-${{ matrix.clang }}
           cached: ${{ steps.cache-llvm.outputs.cache-hit }}
       - name: Install mdbook
-        uses: peaceiris/actions-mdbook@v1
+        uses: peaceiris/actions-mdbook@v2
         with:
           mdbook-version: ${{ matrix.mdbook }}
       - name: Build guide
         run: mdbook build guide
       - name: Publish docs
-        uses: JamesIves/github-pages-deploy-action@3.7.1
+        uses: JamesIves/github-pages-deploy-action@v4.7.3
         with:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BRANCH: gh-pages
-          FOLDER: guide/book
-          CLEAN: true
+          branch: gh-pages
+          folder: guide/book
+          clean: true

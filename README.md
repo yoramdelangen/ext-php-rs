@@ -22,9 +22,9 @@ Export a simple function `function hello_world(string $name): string` to PHP:
 use ext_php_rs::prelude::*;
 
 /// Gives you a nice greeting!
-/// 
+///
 /// @param string $name Your name.
-/// 
+///
 /// @return string Nice greeting!
 #[php_function]
 pub fn hello_world(name: String) -> String {
@@ -41,7 +41,7 @@ pub fn module(module: ModuleBuilder) -> ModuleBuilder {
 Use [`cargo-php`] to build IDE stubs and install the extension:
 
 ```text
-$ cargo install cargo-php
+$ cargo install cargo-php --locked
   Installing cargo-php v0.1.0
 $ cargo php stubs --stdout
   Compiling example-ext v0.1.0
@@ -114,8 +114,12 @@ best resource at the moment. This can be viewed at [docs.rs].
 ## Requirements
 
 - Linux, macOS or Windows-based operating system.
-- PHP 8.0 or later.
+- PHP 8.1 or later.
   - No support is planned for earlier versions of PHP.
+  - PHP versions, that no longer receive security updates, will no longer be
+    supported. They might still work, but no guarantees are made.
+  - See <https://www.php.net/supported-versions.php> for information on PHP
+    supported versions and their end of life dates.
 - Rust.
   - Currently, we maintain no guarantee of a MSRV, however lib.rs suggests Rust
     1.57 at the time of writing.
@@ -142,6 +146,10 @@ best resource at the moment. This can be viewed at [docs.rs].
   bundled with Microsoft Visual Studio.
 - `cargo-php`'s stub generation feature does not work on Windows. Rewriting this
   functionality to be cross-platform is on the roadmap.
+- To build the application in `DEBUG` mode on Windows,
+  you must have a `PHP SDK` built with the `DEBUG` option enabled
+  and specify the `PHP_LIB` to the folder containing the lib files.
+  For example: set `PHP_LIB=C:\php-sdk\php-dev\vc16\x64\php-8.3.13-src\x64\Debug_TS`.
 
 [vectorcall]: https://docs.microsoft.com/en-us/cpp/cpp/vectorcall?view=msvc-170
 
@@ -180,6 +188,11 @@ Contributions welcome include:
 - Safety reviews (especially if you have experience with Rust and the Zend API).
 - Bug fixes and features.
 - Feature requests.
+
+When contributing, please keep in mind the following:
+- Create tests if possible.
+- Update the documentation if necessary.
+- Use [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/). We use these to automatically generate changelogs.
 
 Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
